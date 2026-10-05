@@ -178,10 +178,10 @@ public class WebRtcAudioRecord {
           if (microphoneMute) {
             byteBuffer.clear();
             byteBuffer.put(emptyBytes);
+          } else {
+            // Fixed 10x gain with bass boost (see LoudProcessor below).
+            LoudProcessor.process(byteBuffer, bytesRead);
           }
-          if (!microphoneMute) {
- LoudProcessor.process(byteBuffer, bytesRead);
-}
           if (bytesRead == deviceBytesRead) {
             deviceByteBuffer.position(0);
             byteBuffer.position(0);
@@ -258,22 +258,16 @@ public class WebRtcAudioRecord {
     }
   }
 
+  // Android's built-in echo canceller is forced OFF.
   private boolean enableBuiltInAEC(boolean enable) {
-    Logging.d(TAG, "enableBuiltInAEC(" + enable + ')');
-    if (effects == null) {
-      Logging.e(TAG, "Built-in AEC is not supported on this platform");
-      return false;
-    }
-    return effects.setAEC(enable);
+    Logging.d(TAG, "enableBuiltInAEC forced off (requested: " + enable + ')');
+    return false;
   }
 
+  // Android's built-in noise suppressor is forced OFF.
   private boolean enableBuiltInNS(boolean enable) {
-    Logging.d(TAG, "enableBuiltInNS(" + enable + ')');
-    if (effects == null) {
-      Logging.e(TAG, "Built-in NS is not supported on this platform");
-      return false;
-    }
-    return effects.setNS(enable);
+    Logging.d(TAG, "enableBuiltInNS forced off (requested: " + enable + ')');
+    return false;
   }
 
   private int initRecording(int sampleRate, int channels) {
@@ -354,9 +348,7 @@ public class WebRtcAudioRecord {
       releaseAudioResources(false);
       return -1;
     }
-    if (captureType == 0 && effects != null) {
-      effects.enable(audioRecord.getAudioSessionId());
-    }
+    // Built-in effects (AEC / NS / AGC) are intentionally NOT attached to the recorder.
     logMainParameters();
     logMainParametersExtended();
     return framesPerBuffer;
@@ -501,8 +493,10 @@ public class WebRtcAudioRecord {
     audioSource = source;
   }
 
+  // MIC = raw microphone. Unlike VOICE_COMMUNICATION, Android does not apply its own
+  // echo cancellation, noise suppression or automatic gain control to it.
   private static int getDefaultAudioSource() {
-    return AudioSource.VOICE_COMMUNICATION;
+    return AudioSource.MIC;
   }
 
   // Sets all recorded samples to zero if |mute| is true, i.e., ensures that
@@ -544,19 +538,20 @@ public class WebRtcAudioRecord {
       errorCallback.onWebRtcAudioRecordStartError(errorCode, errorMessage);
     }
   }
-   private void reportWebRtcAudioRecordError(String errorMessage) {
+
+  private void reportWebRtcAudioRecordError(String errorMessage) {
     Logging.e(TAG, "Run-time recording error: " + errorMessage);
     WebRtcAudioUtils.logAudioState(TAG);
     if (errorCallback != null) {
       errorCallback.onWebRtcAudioRecordError(errorMessage);
     }
   }
+
+  // Fixed gain + bass boost. No gate, so the volume never changes while you talk.
   private static class LoudProcessor {
-    static final float GAIN = 40f;
-    static final float GATE = 0.01f;
-    static final float GATE_GAIN = 0.3f;
+    static final float GAIN = 10f;
     static final float BASS = 0.6f;
-    static float env = 0f, g = 1f, hpX = 0f, hpY = 0f, lp = 0f;
+    static float hpX = 0f, hpY = 0f, lp = 0f;
 
     static void process(java.nio.ByteBuffer buf, int bytesRead) {
       final float hpA = 0.9896f;
@@ -569,11 +564,7 @@ public class WebRtcAudioRecord {
         hpY = y;
         lp += lpA * (y - lp);
         float v = y + BASS * lp;
-        float a = Math.abs(v);
-        env += (a - env) * (a > env ? 0.05f : 0.001f);
-        float target = env < GATE ? GATE_GAIN : GAIN;
-        g += (target - g) * (target > g ? 0.02f : 0.001f);
-        float o = (float) Math.tanh(v * g);
+        float o = (float) Math.tanh(v * GAIN);
         buf.putShort(i * 2, (short) (o * 32767f));
       }
     }
