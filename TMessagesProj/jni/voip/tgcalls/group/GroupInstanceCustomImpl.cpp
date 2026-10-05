@@ -1948,18 +1948,10 @@ public:
         }
 
         cricket::AudioOptions audioOptions;
-        if (_disableOutgoingAudioProcessing || _videoContentType == VideoContentType::Screencast) {
-            audioOptions.echo_cancellation = false;
-            audioOptions.noise_suppression = false;
-            audioOptions.auto_gain_control = false;
-            audioOptions.highpass_filter = false;
-            //audioOptions.typing_detection = false;
-            //audioOptions.residual_echo_detector = false;
-        } else {
-            audioOptions.echo_cancellation = true;
-            audioOptions.noise_suppression = true;
-            //audioOptions.residual_echo_detector = true;
-        }
+        audioOptions.echo_cancellation = false;
+        audioOptions.noise_suppression = false;
+        audioOptions.auto_gain_control = false;
+        audioOptions.highpass_filter = false;
 
         std::vector<std::string> streamIds;
         streamIds.push_back("1");
