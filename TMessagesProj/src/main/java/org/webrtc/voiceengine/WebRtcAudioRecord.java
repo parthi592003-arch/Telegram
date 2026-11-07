@@ -72,6 +72,8 @@ public class WebRtcAudioRecord {
 
   private int captureType;
 
+  private LoudProcessor loud;
+
   private int requestedSampleRate = 48000;
   private int requestedChannels = 1;
 
@@ -179,8 +181,10 @@ public class WebRtcAudioRecord {
             byteBuffer.clear();
             byteBuffer.put(emptyBytes);
           } else {
-            // Fixed 10x gain with bass boost (see LoudProcessor below).
-            LoudProcessor.process(byteBuffer, bytesRead);
+            // Loud metal-bass effect (see LoudProcessor.java).
+            if (loud != null) {
+              loud.process(byteBuffer, bytesRead);
+            }
           }
           if (bytesRead == deviceBytesRead) {
             deviceByteBuffer.position(0);
@@ -287,6 +291,7 @@ public class WebRtcAudioRecord {
     byteBuffer.order(ByteOrder.nativeOrder());
     Logging.d(TAG, "byteBuffer.capacity: " + byteBuffer.capacity());
     emptyBytes = new byte[byteBuffer.capacity()];
+    loud = new LoudProcessor(sampleRate);
     // Rather than passing the ByteBuffer with every callback (requiring
     // the potentially expensive GetDirectBufferAddress) we simply have the
     // the native class cache the address to the memory once.
@@ -544,29 +549,6 @@ public class WebRtcAudioRecord {
     WebRtcAudioUtils.logAudioState(TAG);
     if (errorCallback != null) {
       errorCallback.onWebRtcAudioRecordError(errorMessage);
-    }
-  }
-
-  // Fixed gain + bass boost. No gate, so the volume never changes while you talk.
-  private static class LoudProcessor {
-    static final float GAIN = 10f;
-    static final float BASS = 0.6f;
-    static float hpX = 0f, hpY = 0f, lp = 0f;
-
-    static void process(java.nio.ByteBuffer buf, int bytesRead) {
-      final float hpA = 0.9896f;
-      final float lpA = 0.0258f;
-      int n = bytesRead / 2;
-      for (int i = 0; i < n; i++) {
-        float x = buf.getShort(i * 2) / 32768f;
-        float y = hpA * (hpY + x - hpX);
-        hpX = x;
-        hpY = y;
-        lp += lpA * (y - lp);
-        float v = y + BASS * lp;
-        float o = (float) Math.tanh(v * GAIN);
-        buf.putShort(i * 2, (short) (o * 32767f));
-      }
     }
   }
 }
