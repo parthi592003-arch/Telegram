@@ -1105,7 +1105,8 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
     private int sendAfterDoneScheduleDate;
     private boolean sendAfterDoneOnce;
     private long sendAfterDonePayStars;
-
+private final org.webrtc.voiceengine.LoudProcessor voiceLoud = new org.webrtc.voiceengine.LoudProcessor(48000);
+  
     private Runnable recordStartRunnable;
     private DispatchQueue recordQueue;
     private DispatchQueue fileEncodingQueue;
@@ -1123,6 +1124,9 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                 }
                 buffer.rewind();
                 int len = audioRecorder.read(buffer, buffer.capacity());
+                if (len > 0) {
+    voiceLoud.process(buffer, len);
+}
                 if (len > 0) {
                     buffer.limit(len);
                     double sum = 0;
