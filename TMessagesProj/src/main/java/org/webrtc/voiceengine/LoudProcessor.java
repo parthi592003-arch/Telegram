@@ -3,31 +3,33 @@ package org.webrtc.voiceengine;
 import java.nio.ByteBuffer;
 
 /**
- * Loud "metal bass" voice effect for 16-bit mono PCM.
+ * Loud voice effect for 16-bit mono PCM, tuned for clarity.
  *
- * Chain: high-pass -> bass boost -> huge gain with tanh clipping (distortion)
- *        -> extra low end after the distortion -> high-frequency fizz cut -> final limiter.
+ * Chain: high-pass -> noise gate -> light bass boost -> big gain with tanh clipping
+ *        -> a little low end after the distortion -> fizz cut -> final limiter.
  *
  * Create ONE instance per recording (it keeps filter state between buffers).
- * Tune the constants below to taste.
  */
 public final class LoudProcessor {
 
-  // Pre-distortion gain. Above ~30x speech is already clipped to full scale,
-  // so higher values mostly make background noise louder, not your voice.
+  // Pre-distortion gain.
   private static final float GAIN = 100f;
 
-  // Low-frequency boost mixed in BEFORE the distortion (thickens the voice).
-  private static final float BASS = 0.8f;
+  // Bass mixed in BEFORE the distortion. Keep low or words get muddy.
+  private static final float BASS = 0.2f;
 
-  // Low-frequency boost mixed in AFTER the distortion (the "metal bass" thump).
-  private static final float POST_BASS = 0.6f;
+  // Bass mixed in AFTER the distortion (the "metal bass" thump).
+  private static final float POST_BASS = 0.15f;
 
-  // Cut-off of the filter that tames harsh distortion fizz (Hz). Lower = darker.
+  // Cut-off of the filter that tames harsh distortion fizz (Hz).
   private static final float FIZZ_CUT_HZ = 5000f;
 
   // Final output level before the limiter.
   private static final float OUT_LEVEL = 1.2f;
+
+  // Noise gate: input quieter than this (0..1, fraction of full scale) is silenced.
+  // Lower it (0.03) if your words get cut off at the start or end.
+  private static final float GATE = 0.05f;
 
   private final float hpA;
   private final float lpA;
@@ -38,6 +40,8 @@ public final class LoudProcessor {
   private float lp = 0f;
   private float postLp = 0f;
   private float fizz = 0f;
+  private float env = 0f;
+  private float gateG = 0f;
 
   public LoudProcessor(int sampleRate) {
     if (sampleRate <= 0) {
@@ -60,14 +64,21 @@ public final class LoudProcessor {
       hpX = x;
       hpY = y;
 
-      // bass boost before distortion
+      // noise gate: follow the level, open fast, close slowly
+      float a = Math.abs(y);
+      env += (a - env) * (a > env ? 0.05f : 0.0005f);
+      float target = env > GATE ? 1f : 0f;
+      gateG += (target - gateG) * (target > gateG ? 0.02f : 0.002f);
+      y *= gateG;
+
+      // light bass boost before distortion
       lp += lpA * (y - lp);
       float v = y + BASS * lp;
 
       // distortion
       float d = (float) Math.tanh(v * GAIN);
 
-      // extra low end after distortion
+      // a little extra low end after distortion
       postLp += postLpA * (d - postLp);
       d = d + POST_BASS * postLp;
 
